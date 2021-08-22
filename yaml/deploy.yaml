@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name:  gateway-test
+  namespace: gateway-test
+  labels:
+    app:  gateway-test
+spec:
+  selector:
+    matchLabels:
+      app: gateway-test
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app:  gateway-test
+    spec:
+      containers:
+      - name:  gateway-test
+        image:  docker.shijunlee.local/library/gateway-test-demo:v0.0.9
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /_status/healthz
+            port: 8080
+          initialDelaySeconds: 5
+          timeoutSeconds: 2
+          successThreshold: 1
+          failureThreshold: 3
+          periodSeconds: 10 
+        ports:
+        - containerPort:  8080
+          protocol: TCP
+          name:  gateway-test
+        volumeMounts:
+        - name: localtime
+          mountPath: /etc/localtime
+      volumes:
+        - name: localtime
+          hostPath:
+            path: /usr/share/zoneinfo/Asia/Shanghai
+      restartPolicy: Always
+
+--- 
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-test
+  namespace: gateway-test
+spec:
+  selector:
+    app: gateway-test
+  type: LoadBalancer
+  sessionAffinity: None
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+  ports:
+  - name: gateway-test
+    protocol: TCP
+    port: 80
+    targetPort: 8080 
+---
+# https://kubernetes.io/docs/concepts/services-networking/ingress/#the-ingress-resource
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway-test
+  namespace: gateway-test
+spec:
+  ingressClassName: kong
+  rules:
+  - host: ''
+    http:
+      paths:
+      - path: /vm
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-test
+            port:
+              number: 80
